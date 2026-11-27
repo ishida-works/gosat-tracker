@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>いまGOSATはどこ？</title>
+<style>
+:root{--bg:#060b16;--fg:#e6edf7;--mute:#8fa3bf;--line:#1c2b45}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 "Hiragino Sans","Yu Gothic UI","Noto Sans JP",system-ui,sans-serif}
+main{max-width:1200px;margin:0 auto;padding:20px 16px 48px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:12px}
+h1{margin:0;font-size:clamp(28px,5vw,46px);line-height:1.1;letter-spacing:.02em}
+header p{margin:6px 0 0;color:var(--mute)}
+.clock{text-align:right;font-variant-numeric:tabular-nums}
+.clock b{display:block;font-size:22px}
+.clock span{color:var(--mute);font-size:13px}
+.ctl{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;margin-top:6px}
+.seg{display:flex}
+.seg button:first-child{border-radius:6px 0 0 6px}
+.seg button:last-child{border-radius:0 6px 6px 0;border-left:0}
+.seg button[aria-pressed=true]{background:#1d3560;border-color:#56b4e9}
+button,select{background:#101d36;color:var(--fg);border:1px solid #2a3d61;border-radius:6px;padding:6px 10px;font:inherit;cursor:pointer}
+button:disabled{opacity:.45;cursor:default}
+#cst[aria-pressed=true]{background:#1d3560;border-color:#56b4e9}
+button:focus-visible,select:focus-visible{outline:2px solid #56b4e9;outline-offset:2px}
+#warn{display:none;white-space:pre-line;margin:0 0 12px;padding:8px 12px;border-left:3px solid #e69f00;background:#1d1a10;color:#f3d9a0;font-size:13px}
+canvas#map{display:block;width:100%;aspect-ratio:2/1;border:1px solid var(--line);border-radius:4px;cursor:crosshair}
+#gl{display:none;position:relative;width:100%;aspect-ratio:16/10;max-height:80vh;border:1px solid var(--line);border-radius:4px;overflow:hidden;background:#02040a;cursor:grab}
+#gl:active{cursor:grabbing}
+#gl canvas{display:block;width:100%;height:100%}
+.lbl{position:absolute;left:0;top:0;pointer-events:none;font:600 13px system-ui,sans-serif;color:#fff;white-space:nowrap;border-left:3px solid var(--c);padding-left:5px;text-shadow:0 0 3px #060b16,0 0 3px #060b16,0 0 6px #060b16;will-change:transform}
+.grid{display:grid;grid-template-columns:3fr 2fr;gap:36px;margin-top:24px}
+@media(max-width:820px){.grid{grid-template-columns:1fr;gap:24px}}
+h2{font-size:17px;margin:0 0 12px}
+.sat{border-left:4px solid var(--c);padding:2px 0 2px 12px;margin-bottom:16px}
+.sat h3{margin:0;font-size:18px}
+.sat h3 small{color:var(--mute);font-weight:400;font-size:13px;margin-left:8px}
+.sat dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:4px 16px;margin:4px 0 0;font-variant-numeric:tabular-nums;font-size:14px}
+.sat dt{color:var(--mute);font-size:12px}
+.sat dd{margin:0}
+.sat ul{list-style:none;margin:4px 0 0;padding:0;font-variant-numeric:tabular-nums;font-size:14px}
+.sat li{display:flex;flex-wrap:wrap;gap:2px 14px;padding:2px 0}
+.warnv{color:#f3b760}
+.day{color:#f5d77a}.night{color:var(--mute)}
+.row{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;margin-bottom:14px;color:var(--mute);font-size:14px}
+.note{color:var(--mute);font-size:13px;margin-top:20px;max-width:70ch}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div>
+    <h1>いまGOSATはどこ？</h1>
+    <p>温室効果ガスを宇宙から測る「いぶき」シリーズの、いまの位置と次の通過時刻。</p>
+  </div>
+  <div class="clock">
+    <b id="clk">--</b><span id="mode"></span>
+    <div class="ctl">
+      <div class="seg" role="group" aria-label="表示の切り替え">
+        <button id="v3" type="button" aria-pressed="false" disabled>3D地球</button><button id="v2" type="button" aria-pressed="true">2D地図</button>
+      </div>
+      <select id="jump" aria-label="視点を移す" style="display:none"></select>
+      <button id="cst" type="button" aria-pressed="false" style="display:none">星座線</button>
+      <select id="spd" aria-label="再生速度"><option value="1">等倍</option><option value="60">60倍</option><option value="600">600倍</option></select>
+      <button id="now" type="button">いまに戻す</button>
+    </div>
+  </div>
+</header>
+<p id="warn" role="status"></p>
+<canvas id="map" role="img" aria-label="世界地図上のGOSATシリーズの現在位置と地上軌跡。同じ内容は下の表にも文字で表示されます。"></canvas>
+<div id="gl" role="img" aria-label="3Dの地球儀上のGOSATシリーズの現在位置と軌道。同じ内容は下の表にも文字で表示されます。"></div>
+<div class="grid">
+  <div><h2>現在の位置</h2><div id="sats"></div></div>
+  <div>
+    <h2>あなたの上空を通るのは？</h2>
+    <div class="row">
+      <span id="obs"></span>
+      <button id="geo" type="button">現在地を使う</button>
+      <label>半径 <select id="rad"><option>100</option><option selected>300</option><option>500</option></select> km以内</label>
+    </div>
+    <div id="passes"></div>
+  </div>
+</div>
+<p class="note">線は軌道計算による軌跡です（実線＝過去50分、破線＝今後100分）。3D地球では実際の高度に描かれ、2D地図では地上に投影されます。実際の観測点ではありません。3D地球はドラッグで回転、ホイールやピンチで拡大縮小、クリックで地点を変更できます（2D地図もクリックで変更できます）。昼夜の境は太陽位置の近似計算です。3D地球の星は実在の恒星（約5000個、Hipparcos星表）を実際の方角に、太陽と月も実際の方角に置いています（太陽・月の位置は近似計算、月の距離は実寸）。ズームアウトすると地球と月を実寸で見られますが、月は遠いと小さすぎるため、見える最小のサイズまで拡大して描いています。地球画像はNASA Blue Marble／Black Marble（three-globe同梱）。</p>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/satellite.js@4.1.3/dist/satellite.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+const SATS=[
+ {id:'33492',name:'GOSAT',sub:'いぶき',c:'#E69F00'},
+ {id:'43672',name:'GOSAT-2',sub:'いぶき2号',c:'#56B4E9'},
+ {id:'64694',name:'GOSAT-GW',sub:'後継機',c:'#009E73'}];
+// data/tle.json が無いときのデモ用（古いTLE。位置はずれます）
+const FALLBACK={
+ '33492':['1 33492U 09002A   26215.86589030  .00000521  00000+0  10043-3 0  9995','2 33492  98.0924 326.3581 0001112 101.3560 258.7770 14.67537881938459'],
+ '43672':['1 43672U 18084B   25199.58568573  .00001547  00000-0  19112-3 0  9990','2 43672  97.8588 310.6327 0001843  98.2834 261.8589 14.84244739364076']};
+const $=s=>document.querySelector(s),D2R=Math.PI/180,RE=6371;
+const cv=$('#map'),ctx=cv.getContext('2d'),reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+let dayImg=null,nightImg=null,ec=null,dl=null,mk=null,ecT=0,G=null,mode='2d';
+let W=0,H=0,dpr=1,land=null,live=[],obs={lat:35.68,lon:139.77},R=300,simNow=Date.now(),speed=1,passes={},passT=null,last=0,lastUI=0;
+const X=lon=>(lon+180)/360*W,Y=lat=>(90-lat)/180*H;
+function warn(m){const w=$('#warn');w.textContent=(w.textContent?w.textContent+'\n':'')+m;w.style.display='block';}
+function size(){if(!cv.clientWidth)return;dpr=devicePixelRatio||1;W=cv.width=Math.round(cv.clientWidth*dpr);H=cv.height=Math.round(W/2);}
+function geo(rec,t){const d=new Date(t),pv=satellite.propagate(rec,d);if(!pv.position)return null;
+ const g=satellite.eciToGeodetic(pv.position,satellite.gstime(d));
+ return{lat:satellite.degreesLat(g.latitude),lon:satellite.degreesLong(g.longitude),h:g.height,t};}
+function sun(t){const d=t/864e5-10957.5,g=(357.528+.9856003*d)*D2R,L=280.46+.9856474*d;
+ const lam=(L+1.915*Math.sin(g)+.02*Math.sin(2*g))*D2R,e=(23.439-4e-7*d)*D2R;
+ const ra=Math.atan2(Math.cos(e)*Math.sin(lam),Math.cos(lam))/D2R,gm=280.46061837+360.98564736629*d;
+ return{dec:Math.asin(Math.sin(e)*Math.sin(lam)),lon:(((ra-gm)%360)+540)%360-180};}
+function elev(lat,lon,s){return Math.asin(Math.sin(lat*D2R)*Math.sin(s.dec)+Math.cos(lat*D2R)*Math.cos(s.dec)*Math.cos((lon-s.lon)*D2R))/D2R;}
+function dist(g){const p=obs.lat*D2R,q=g.lat*D2R;return 6371*Math.acos(Math.min(1,Math.sin(p)*Math.sin(q)+Math.cos(p)*Math.cos(q)*Math.cos((g.lon-obs.lon)*D2R)));}
+function rings(g,o){if(g.type==='FeatureCollection')g.features.forEach(f=>rings(f,o));else if(g.type==='Feature')rings(g.geometry,o);
+ else if(g.type==='GeometryCollection')g.geometries.forEach(x=>rings(x,o));else if(g.type==='Polygon')o.push(g.coordinates);
+ else if(g.type==='MultiPolygon')g.coordinates.forEach(p=>o.push(p));}
+function pts(s){const c=s.tc;if(!c||Math.abs(simNow-c.t)>6e5){const a=[];for(let t=simNow-50*6e4;t<=simNow+100*6e4;t+=3e4){const g=geo(s.rec,t);if(g)a.push(g);}s.tc={t:simNow,a};}return s.tc.a;}
+function line(a){ctx.beginPath();a.forEach((p,i)=>(i&&Math.abs(p.lon-a[i-1].lon)<180)?ctx.lineTo(X(p.lon),Y(p.lat)):ctx.moveTo(X(p.lon),Y(p.lat)));ctx.stroke();}
+
+// ---- 実写の地球画像（2:1の正距円筒図法）。data/ に置いたファイルがあれば優先、無ければCDNから取得 ----
+const IMG_DAY=['data/earth_day.jpg','https://cdn.jsdelivr.net/npm/three-globe/example/img/earth-blue-marble.jpg'];
+const IMG_NIGHT=['data/earth_night.jpg','https://cdn.jsdelivr.net/npm/three-globe/example/img/earth-night.jpg'];
+function loadImg(urls){return new Promise(res=>{let i=0;const im=new Image();im.crossOrigin='anonymous';
+ im.onload=()=>res(im);im.onerror=()=>{++i<urls.length?im.src=urls[i]:res(null);};im.src=urls[0];});}
+// 2D用：昼側の画像を、太陽高度に応じた滑らかなマスクで夜側の画像に重ねる
+function buildEarth(){
+ if(!ec||ec.width!==W||ec.height!==H){ec=document.createElement('canvas');dl=document.createElement('canvas');ec.width=dl.width=W;ec.height=dl.height=H;}
+ if(!mk){mk=document.createElement('canvas');mk.width=360;mk.height=180;}
+ const s=sun(simNow),m=mk.getContext('2d'),id=m.createImageData(360,180),sd=Math.sin(s.dec),cd=Math.cos(s.dec);
+ for(let y=0;y<180;y++){const lat=(89.5-y)*D2R,a=Math.sin(lat)*sd,b=Math.cos(lat)*cd;
+  for(let x=0;x<360;x++){const e=Math.asin(Math.max(-1,Math.min(1,a+b*Math.cos((x-179.5-s.lon)*D2R))))/D2R;
+   const k=Math.max(0,Math.min(1,(e+8)/14));id.data[(y*360+x)*4+3]=Math.round(k*k*(3-2*k)*255);}}
+ m.putImageData(id,0,0);
+ const d=dl.getContext('2d');d.imageSmoothingQuality='high';d.globalCompositeOperation='source-over';d.clearRect(0,0,W,H);
+ d.drawImage(dayImg,0,0,W,H);d.globalCompositeOperation='destination-in';d.imageSmoothingEnabled=true;d.drawImage(mk,0,0,W,H);
+ const c=ec.getContext('2d');c.imageSmoothingQuality='high';c.drawImage(nightImg,0,0,W,H);c.drawImage(dl,0,0);
+}
+
+// ---- 2D地図 ----
+function draw(ts){
+ ctx.fillStyle='#0b1830';ctx.fillRect(0,0,W,H);
+ const tex=dayImg&&nightImg;
+ if(tex){if(!ec||ec.width!==W||ec.height!==H||Math.abs(simNow-ecT)>15000){buildEarth();ecT=simNow;}ctx.drawImage(ec,0,0);}
+ ctx.strokeStyle=tex?'rgba(255,255,255,.14)':'rgba(143,163,191,.12)';ctx.lineWidth=dpr;
+ for(let l=-150;l<=180;l+=30){ctx.beginPath();ctx.moveTo(X(l),0);ctx.lineTo(X(l),H);ctx.stroke();}
+ for(let l=-60;l<=60;l+=30){ctx.beginPath();ctx.moveTo(0,Y(l));ctx.lineTo(W,Y(l));ctx.stroke();}
+ if(!tex&&land){ctx.fillStyle='#25406a';for(const poly of land){ctx.beginPath();for(const r of poly)r.forEach((p,i)=>i?ctx.lineTo(X(p[0]),Y(p[1])):ctx.moveTo(X(p[0]),Y(p[1])));ctx.fill('evenodd');}}
+ if(!tex){const s=sun(simNow);let dec=s.dec;if(Math.abs(dec)<1e-3)dec=1e-3;
+ const tm=[];for(let lon=-180;lon<=180;lon+=2)tm.push([lon,Math.atan(-Math.cos((lon-s.lon)*D2R)/Math.tan(dec))/D2R]);
+ ctx.beginPath();tm.forEach((p,i)=>i?ctx.lineTo(X(p[0]),Y(p[1])):ctx.moveTo(X(p[0]),Y(p[1])));
+ const edge=dec>0?H:0;ctx.lineTo(W,edge);ctx.lineTo(0,edge);ctx.closePath();ctx.fillStyle='rgba(2,5,12,.58)';ctx.fill();
+ ctx.beginPath();tm.forEach((p,i)=>i?ctx.lineTo(X(p[0]),Y(p[1])):ctx.moveTo(X(p[0]),Y(p[1])));ctx.strokeStyle='rgba(255,224,160,.35)';ctx.stroke();}
+ const ox=X(obs.lon),oy=Y(obs.lat),ry=R/111.2*H/180;
+ ctx.strokeStyle='rgba(230,237,247,.65)';ctx.setLineDash([4*dpr,4*dpr]);ctx.beginPath();ctx.ellipse(ox,oy,ry/Math.max(.1,Math.cos(obs.lat*D2R)),ry,0,0,7);ctx.stroke();ctx.setLineDash([]);
+ ctx.beginPath();ctx.moveTo(ox-6*dpr,oy);ctx.lineTo(ox+6*dpr,oy);ctx.moveTo(ox,oy-6*dpr);ctx.lineTo(ox,oy+6*dpr);ctx.stroke();
+ for(const v of live){
+  v.g=geo(v.rec,simNow);if(!v.g)continue;
+  const a=pts(v),past=a.filter(p=>p.t<=simNow).concat(v.g),fut=[v.g].concat(a.filter(p=>p.t>simNow));
+  ctx.strokeStyle=v.c;ctx.lineWidth=2*dpr;ctx.globalAlpha=.8;line(past);
+  ctx.setLineDash([6*dpr,6*dpr]);ctx.globalAlpha=.4;line(fut);ctx.setLineDash([]);ctx.globalAlpha=1;
+  const x=X(v.g.lon),y=Y(v.g.lat);
+  if(!reduce){const k=(ts/60)%16;ctx.globalAlpha=1-k/16;ctx.beginPath();ctx.arc(x,y,(5+k)*dpr,0,7);ctx.stroke();ctx.globalAlpha=1;}
+  ctx.shadowColor=v.c;ctx.shadowBlur=14*dpr;ctx.fillStyle=v.c;ctx.beginPath();ctx.arc(x,y,5*dpr,0,7);ctx.fill();ctx.shadowBlur=0;
+  ctx.font='600 '+13*dpr+'px system-ui,sans-serif';ctx.lineWidth=3*dpr;ctx.strokeStyle='#060b16';ctx.strokeText(v.name,x+10*dpr,y-8*dpr);ctx.fillStyle='#fff';ctx.fillText(v.name,x+10*dpr,y-8*dpr);
+ }
+}
+
+// ---- 3D地球（three.js） ----
+// 緯度経度 → 球面上の座標（three.jsのSphereGeometryのUVに合わせた向き）
+const ll2v=(lat,lon,r=1)=>{const a=lat*D2R,b=lon*D2R;return new THREE.Vector3(r*Math.cos(a)*Math.cos(b),r*Math.sin(a),-r*Math.cos(a)*Math.sin(b));};
+function occluded(p,c){const dx=p.x-c.x,dy=p.y-c.y,dz=p.z-c.z,L=dx*dx+dy*dy+dz*dz,t=-(c.x*dx+c.y*dy+c.z*dz)/L;
+ if(t<=0||t>=1)return false;const x=c.x+t*dx,y=c.y+t*dy,z=c.z+t*dz;return x*x+y*y+z*z<1;}
+function setLine(l,arr){const pos=l.geometry.attributes.position.array;let n=0;
+ for(const p of arr){if(n+3>pos.length)break;const r=1+p.h/RE,a=p.lat*D2R,b=p.lon*D2R;
+  pos[n++]=r*Math.cos(a)*Math.cos(b);pos[n++]=r*Math.sin(a);pos[n++]=-r*Math.cos(a)*Math.sin(b);}
+ l.geometry.attributes.position.needsUpdate=true;l.geometry.setDrawRange(0,n/3);
+ if(l.material.isLineDashedMaterial)l.computeLineDistances();}
+function buildObs(){
+ const pos=G.ring.geometry.attributes.position.array,f=obs.lat*D2R,l0=obs.lon*D2R,dd=R/RE,sf=Math.sin(f),cf=Math.cos(f);
+ for(let i=0;i<=72;i++){const t=i*5*D2R,la=Math.asin(sf*Math.cos(dd)+cf*Math.sin(dd)*Math.cos(t)),
+   lo=l0+Math.atan2(Math.sin(t)*Math.sin(dd)*cf,Math.cos(dd)-sf*Math.sin(la)),v=ll2v(la/D2R,lo/D2R,1.004);
+  pos[i*3]=v.x;pos[i*3+1]=v.y;pos[i*3+2]=v.z;}
+ G.ring.geometry.attributes.position.needsUpdate=true;G.ring.computeLineDistances();
+ G.pin.position.copy(ll2v(obs.lat,obs.lon,1.004));}
+function jumpTo(lat,lon){if(!G)return;const d=G.camera.position.length();G.camera.position.copy(ll2v(Math.max(-85,Math.min(85,lat)),lon,d));G.ctl.update();}
+// 地球と月を同時に見渡せる位置へ（月は実寸の距離にあるため、かなり引く）
+function jumpMoon(){if(!G)return;const c=new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0),G.moon.position).normalize().multiplyScalar(170);G.camera.position.copy(c);G.ctl.update();}
+// 太陽が地球の縁から顔を出す位置へ
+function jumpSun(){if(!G)return;const sv=G.sv,u=new THREE.Vector3().crossVectors(sv,new THREE.Vector3(0,1,0)).normalize(),a=22*D2R;
+ G.camera.position.copy(sv.clone().multiplyScalar(-Math.cos(a)).addScaledVector(u,Math.sin(a)).multiplyScalar(3.3));G.ctl.update();}
+
+// ---- 天体の位置（地球固定座標。y軸＝北、経度0＝+x、東経90度＝-z） ----
+const gmst=t=>280.46061837+360.98564736629*(t/864e5-10957.5); // グリニッジ恒星時[度]
+// 月の位置（主要項のみの簡易式。誤差は0.3度程度）。ra, dec は度、r は地球半径単位
+function moonVec(t){const d=t/864e5-10957.5,L=D2R*(218.3164+13.17639648*d),M=D2R*(134.9634+13.06499295*d),F=D2R*(93.272+13.22935*d),Dm=D2R*(297.8502+12.19074912*d),Ms=D2R*(357.5291+.98560028*d);
+ const l=L+D2R*(6.289*Math.sin(M)+1.274*Math.sin(2*Dm-M)+.658*Math.sin(2*Dm)+.214*Math.sin(2*M)-.186*Math.sin(Ms)-.114*Math.sin(2*F)),
+  b=D2R*(5.128*Math.sin(F)+.2806*Math.sin(M+F)+.2777*Math.sin(M-F)+.1732*Math.sin(2*Dm-F)),
+  dt=385001-20905*Math.cos(M)-3699*Math.cos(2*Dm-M)-2956*Math.cos(2*Dm)-570*Math.cos(2*M),e=D2R*23.4397;
+ return{ra:Math.atan2(Math.sin(l)*Math.cos(e)-Math.tan(b)*Math.sin(e),Math.cos(l))/D2R,
+  dec:Math.asin(Math.sin(b)*Math.cos(e)+Math.cos(b)*Math.sin(e)*Math.sin(l))/D2R,r:dt/RE};}
+
+// ---- 恒星 ----
+const STAR_URLS=['data/stars.6.json','https://cdn.jsdelivr.net/npm/d3-celestial@0.7.35/data/stars.6.json'];
+const CST_URLS=['data/constellations.lines.json','https://cdn.jsdelivr.net/npm/d3-celestial@0.7.35/data/constellations.lines.json'];
+const MOON_URLS=['data/moon.jpg','https://cdn.jsdelivr.net/gh/mrdoob/three.js@r147/examples/textures/planets/moon_1024.jpg'];
+// 星表を読み込めないときの代用（明るい主要な星のみ）[赤経°, 赤緯°, 等級, B-V]
+const STAR_FALLBACK=[[101.29,-16.72,-1.46,0],[95.99,-52.70,-.74,.15],[213.92,19.18,-.05,1.23],[219.90,-60.83,-.01,.71],[279.23,38.78,.03,0],
+ [79.17,46.00,.08,.8],[78.63,-8.20,.13,-.03],[114.83,5.22,.34,.42],[24.43,-57.24,.46,-.16],[88.79,7.41,.42,1.85],[210.96,-60.37,.61,-.23],
+ [297.70,8.87,.77,.22],[186.65,-63.10,.76,-.24],[68.98,16.51,.85,1.54],[247.35,-26.43,.96,1.83],[201.30,-11.16,.97,-.23],[116.33,28.03,1.14,1],
+ [344.41,-29.62,1.16,.09],[310.36,45.28,1.25,.09],[191.93,-59.69,1.25,-.23],[152.09,11.97,1.35,-.11],[113.65,31.89,1.58,.03],[81.28,6.35,1.64,-.22],
+ [81.57,28.61,1.65,-.13],[84.05,-1.20,1.69,-.18],[85.19,-1.94,1.77,-.21],[83.00,-.30,2.23,-.22],[165.93,61.75,1.79,1.07],[206.89,49.31,1.86,-.19],
+ [37.95,89.26,1.98,.6],[200.98,54.93,2.04,.02],[193.51,55.96,1.76,-.02],[165.46,56.38,2.37,-.02],[178.46,53.69,2.44,0],[183.86,57.03,3.31,.08]];
+const BVS=[[-.3,.61,.70,1],[0,.80,.86,1],[.6,1,.96,.90],[1,1,.85,.62],[1.5,1,.72,.45],[2,1,.6,.35]];
+function starRGB(bv){if(!isFinite(bv))bv=.6;bv=Math.max(-.3,Math.min(2,bv));
+ for(let i=1;i<BVS.length;i++){if(bv<=BVS[i][0]){const a=BVS[i-1],b=BVS[i],t=(bv-a[0])/(b[0]-a[0]);return[a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t,a[3]+(b[3]-a[3])*t];}}
+ return[1,.6,.35];}
+async function loadJson(urls){for(const u of urls){try{const r=await fetch(u);if(r.ok)return await r.json();}catch(e){}}return null;}
+// GeoJSON(経度=赤経°, 緯度=赤緯°) → [[赤経,赤緯,等級,B-V],...]。シリウスの位置で形式を検算し、合わなければ捨てる
+function parseStars(j){if(!j||!j.features)return null;const out=[];
+ for(const f of j.features){const c=f.geometry&&f.geometry.coordinates,p=f.properties||{},mag=parseFloat(p.mag);if(!c||!(mag<=6.5))continue;out.push([c[0],c[1],mag,parseFloat(p.bv)]);}
+ const ok=out.some(t=>t[2]<-1&&Math.abs(t[1]+16.7)<1&&Math.abs(((t[0]-101.3+540)%360)-180)<1);
+ return ok?out:null;}
+function buildStars(list){
+ const n=list.length,pos=new Float32Array(n*3),col=new Float32Array(n*3),siz=new Float32Array(n),RS=600;
+ for(let i=0;i<n;i++){const t=list[i],a=t[1]*D2R,b=t[0]*D2R;
+  pos[i*3]=RS*Math.cos(a)*Math.cos(b);pos[i*3+1]=RS*Math.sin(a);pos[i*3+2]=-RS*Math.cos(a)*Math.sin(b);
+  const c=starRGB(t[3]),br=Math.max(.3,Math.min(1.5,.42+(6-t[2])*.14));
+  col[i*3]=c[0]*br;col[i*3+1]=c[1]*br;col[i*3+2]=c[2]*br;siz[i]=1.1+Math.max(0,5.5-t[2])*.75;}
+ const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(pos,3));
+ g.setAttribute('aColor',new THREE.BufferAttribute(col,3));g.setAttribute('aSize',new THREE.BufferAttribute(siz,1));
+ if(G.starPts){G.sky.remove(G.starPts);G.starPts.geometry.dispose();}
+ const pt=new THREE.Points(g,G.starMat);pt.frustumCulled=false;G.sky.add(pt);G.starPts=pt;}
+function buildCst(j){
+ if(!j||!j.features||!G)return;const RS=596,a=[];
+ for(const f of j.features){const g=f.geometry;if(!g)continue;const ls=g.type==='MultiLineString'?g.coordinates:g.type==='LineString'?[g.coordinates]:[];
+  for(const l of ls)for(let i=1;i<l.length;i++)for(const p of [l[i-1],l[i]]){const A=p[1]*D2R,B=p[0]*D2R;a.push(RS*Math.cos(A)*Math.cos(B),RS*Math.sin(A),-RS*Math.cos(A)*Math.sin(B));}}
+ if(!a.length)return;
+ const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(a),3));
+ const l=new THREE.LineSegments(g,new THREE.LineBasicMaterial({color:0x7fa0d8,transparent:true,opacity:.4,depthWrite:false}));
+ l.frustumCulled=false;l.visible=false;G.sky.add(l);G.cst=l;
+ const b=$('#cst');b.style.display=mode==='3d'?'':'none';b.onclick=()=>{l.visible=!l.visible;b.setAttribute('aria-pressed',l.visible);};}
+// 3D空間の点にHTMLラベルを重ねる（地球の陰になるときは薄くする）
+function place(lbl,p,w,h,show){const q=p.clone().project(G.camera);
+ if(show&&q.z<1){lbl.style.display='block';lbl.style.opacity=occluded(p,G.camera.position)?.3:1;
+  lbl.style.transform='translate('+Math.round((q.x*.5+.5)*w+10)+'px,'+Math.round((-q.y*.5+.5)*h-22)+'px)';}
+ else lbl.style.display='none';}
+
+function init3D(){
+ if(typeof THREE==='undefined'||!THREE.OrbitControls)throw new Error('three.js を読み込めませんでした');
+ const box=$('#gl'),renderer=new THREE.WebGLRenderer({antialias:true});
+ renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));renderer.setClearColor(0x02040a,1);
+ box.appendChild(renderer.domElement);
+ const scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(35,2,.1,1500);
+ camera.position.copy(ll2v(obs.lat,obs.lon,3.3));
+ const ctl=new THREE.OrbitControls(camera,renderer.domElement);
+ ctl.enablePan=false;ctl.enableDamping=!reduce;ctl.dampingFactor=.08;ctl.minDistance=1.3;ctl.maxDistance=200;ctl.zoomSpeed=1.5;
+ // 地球の画像（無ければ2D用の簡易地図で代用）
+ const mkTex=im=>{const t=new THREE.Texture(im);t.anisotropy=renderer.capabilities.getMaxAnisotropy();t.needsUpdate=true;return t;};
+ let dayT,nightT,hasNight=1;
+ if(dayImg&&nightImg){dayT=mkTex(dayImg);nightT=mkTex(nightImg);}
+ else{const c=document.createElement('canvas');c.width=2048;c.height=1024;const x=c.getContext('2d');x.fillStyle='#0b1830';x.fillRect(0,0,2048,1024);
+  if(land){x.fillStyle='#25406a';for(const poly of land){x.beginPath();for(const r of poly)r.forEach((p,i)=>{const px=(p[0]+180)/360*2048,py=(90-p[1])/180*1024;i?x.lineTo(px,py):x.moveTo(px,py);});x.fill('evenodd');}}
+  dayT=nightT=mkTex(c);hasNight=0;}
+ const mat=new THREE.ShaderMaterial({
+  uniforms:{uDay:{value:dayT},uNight:{value:nightT},uSun:{value:new THREE.Vector3(1,0,0)},uHasNight:{value:hasNight}},
+  vertexShader:'varying vec2 vUv;varying vec3 vN;void main(){vUv=uv;vN=normalize(position);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+  fragmentShader:'uniform sampler2D uDay,uNight;uniform vec3 uSun;uniform float uHasNight;varying vec2 vUv;varying vec3 vN;'+
+   'void main(){float e=dot(normalize(vN),uSun);float k=smoothstep(-.14,.10,e);vec3 d=texture2D(uDay,vUv).rgb,n=texture2D(uNight,vUv).rgb;'+
+   'if(uHasNight<.5)n=d*.25;else n+=d*.05;gl_FragColor=vec4(mix(n,d,k),1.0);}'});
+ const earth=new THREE.Mesh(new THREE.SphereGeometry(1,96,64),mat);scene.add(earth);
+ // 大気のにじみ
+ scene.add(new THREE.Mesh(new THREE.SphereGeometry(1.1,64,48),new THREE.ShaderMaterial({
+  vertexShader:'varying vec3 vN;void main(){vN=normalize(normalMatrix*normal);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+  fragmentShader:'varying vec3 vN;void main(){float i=pow(clamp(-vN.z*2.4,0.,1.),2.5);gl_FragColor=vec4(.35,.62,1.,1.)*i*.8;}',
+  side:THREE.BackSide,blending:THREE.AdditiveBlending,transparent:true,depthWrite:false})));
+ // 恒星・星座線（慣性系に固定。毎フレーム恒星時の分だけ回す）
+ const sky=new THREE.Group();scene.add(sky);
+ const starMat=new THREE.ShaderMaterial({uniforms:{uPx:{value:renderer.getPixelRatio()}},
+  vertexShader:'attribute float aSize;attribute vec3 aColor;uniform float uPx;varying vec3 vC;void main(){vC=aColor;gl_PointSize=aSize*uPx;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+  fragmentShader:'varying vec3 vC;void main(){float d=length(gl_PointCoord-.5)*2.;gl_FragColor=vec4(vC,smoothstep(1.,.2,d));}',
+  transparent:true,depthWrite:false,blending:THREE.AdditiveBlending});
+ // 太陽（実際の方角。光のにじみは見やすさのための演出）
+ const sc=document.createElement('canvas');sc.width=sc.height=128;{const x=sc.getContext('2d'),g=x.createRadialGradient(64,64,0,64,64,64);
+  g.addColorStop(0,'rgba(255,255,255,1)');g.addColorStop(.07,'rgba(255,255,255,1)');g.addColorStop(.16,'rgba(255,236,170,.75)');
+  g.addColorStop(.45,'rgba(255,190,90,.16)');g.addColorStop(1,'rgba(255,170,60,0)');x.fillStyle=g;x.fillRect(0,0,128,128);}
+ const sunSpr=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(sc),blending:THREE.AdditiveBlending,transparent:true,depthWrite:false}));
+ sunSpr.scale.setScalar(40);scene.add(sunSpr);
+ // 月（実際の方角・距離・大きさ。太陽光で照らして満ち欠けを表現）
+ const moonMat=new THREE.MeshLambertMaterial({color:0x9a9a9a});
+ const moon=new THREE.Mesh(new THREE.SphereGeometry(.2725,48,32),moonMat);scene.add(moon);
+ const sunLight=new THREE.DirectionalLight(0xffffff,1.15);scene.add(sunLight);scene.add(new THREE.AmbientLight(0x1a2030,1));
+ // 衛星の光のにじみ用テクスチャ
+ const gc=document.createElement('canvas');gc.width=gc.height=64;{const x=gc.getContext('2d'),g=x.createRadialGradient(32,32,0,32,32,32);
+  g.addColorStop(0,'rgba(255,255,255,1)');g.addColorStop(.25,'rgba(255,255,255,.35)');g.addColorStop(1,'rgba(255,255,255,0)');x.fillStyle=g;x.fillRect(0,0,64,64);}
+ const glow=new THREE.CanvasTexture(gc);
+ const mkLbl=(text,c)=>{const l=document.createElement('div');l.className='lbl';l.style.setProperty('--c',c);l.textContent=text;box.appendChild(l);return l;};
+ const mkLine=m=>{const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(500*3),3));g.setDrawRange(0,0);
+  const l=new THREE.Line(g,m);l.frustumCulled=false;scene.add(l);return l;};
+ const sats=live.map(v=>{const col=new THREE.Color(v.c);
+  const dot=new THREE.Mesh(new THREE.SphereGeometry(.012,16,12),new THREE.MeshBasicMaterial({color:col}));scene.add(dot);
+  const halo=new THREE.Sprite(new THREE.SpriteMaterial({map:glow,color:col,blending:THREE.AdditiveBlending,transparent:true,depthWrite:false}));scene.add(halo);
+  const past=mkLine(new THREE.LineBasicMaterial({color:col,transparent:true,opacity:.9}));
+  const fut=mkLine(new THREE.LineDashedMaterial({color:col,transparent:true,opacity:.6,dashSize:.03,gapSize:.03}));
+  return{v,dot,halo,past,fut,lbl:mkLbl(v.name,v.c)};});
+ // 観測地点（ピンと半径の円）
+ const rg=new THREE.BufferGeometry();rg.setAttribute('position',new THREE.BufferAttribute(new Float32Array(73*3),3));
+ const ring=new THREE.Line(rg,new THREE.LineDashedMaterial({color:0xe6edf7,transparent:true,opacity:.8,dashSize:.02,gapSize:.015}));ring.frustumCulled=false;scene.add(ring);
+ const pin=new THREE.Mesh(new THREE.SphereGeometry(.008,12,10),new THREE.MeshBasicMaterial({color:0xffffff}));scene.add(pin);
+ G={box,renderer,scene,camera,ctl,mat,earth,sats,ring,pin,sky,starMat,starPts:null,cst:null,sunSpr,sunLight,moon,mm:new THREE.Matrix4(),sv:new THREE.Vector3(1,0,0),
+  extra:[{lbl:mkLbl('太陽','#f5d77a'),pos:sunSpr.position},{lbl:mkLbl('月','#cfd8e8'),pos:moon.position}],
+  dirty:true,w:0,h:0,ray:new THREE.Raycaster()};
+ // クリックで観測地点を変更（ドラッグとは区別する）
+ let pd=null;const el=renderer.domElement;
+ el.addEventListener('pointerdown',e=>{pd={x:e.clientX,y:e.clientY,t:performance.now()};});
+ el.addEventListener('pointerup',e=>{if(!pd)return;const m=Math.hypot(e.clientX-pd.x,e.clientY-pd.y),dt=performance.now()-pd.t;pd=null;if(m>5||dt>500)return;
+  const r=el.getBoundingClientRect();G.ray.setFromCamera(new THREE.Vector2((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1),camera);
+  const h=G.ray.intersectObject(earth)[0];if(h){const p=h.point.clone().normalize();setObs(Math.asin(p.y)/D2R,Math.atan2(-p.z,p.x)/D2R);}});
+ // 視点を移すメニュー
+ const j=$('#jump');j.innerHTML='<option value="">視点を移す…</option><option value="obs">観測地点</option>'+live.map((v,i)=>'<option value="sat'+i+'">'+v.name+'</option>').join('')+
+  '<option value="moon">地球と月（実寸）</option><option value="sun">太陽（日の出・日没）</option>';
+ j.onchange=()=>{const k=j.value;j.value='';
+  if(k==='obs')jumpTo(obs.lat,obs.lon);else if(k==='moon')jumpMoon();else if(k==='sun')jumpSun();
+  else if(k.startsWith('sat')){const g=live[+k.slice(3)].g;if(g)jumpTo(g.lat,g.lon);}};
+ $('#v3').disabled=false;setMode('3d');
+ // 星表・星座線・月面画像は、読み込めた時点で差し替える
+ buildStars(STAR_FALLBACK);
+ loadJson(STAR_URLS).then(j=>{const l=parseStars(j);if(l)buildStars(l);else warn('星表を読み込めなかったため、明るい主要な星（約35個）のみ表示しています。');});
+ loadJson(CST_URLS).then(buildCst);
+ loadImg(MOON_URLS).then(im=>{if(im){const t=new THREE.Texture(im);t.anisotropy=renderer.capabilities.getMaxAnisotropy();t.needsUpdate=true;moonMat.map=t;moonMat.color.set(0xffffff);moonMat.needsUpdate=true;}});
+}
+function draw3D(){
+ const box=G.box,w=box.clientWidth,h=box.clientHeight;if(!w||!h)return;
+ if(w!==G.w||h!==G.h){G.w=w;G.h=h;G.renderer.setSize(w,h,false);G.camera.aspect=w/h;G.camera.updateProjectionMatrix();}
+ const cam=G.camera,d=cam.position.length();
+ G.ctl.rotateSpeed=Math.min(.7,Math.max(.12,(d-1)*.5));G.ctl.update();
+ if(G.dirty){buildObs();G.dirty=false;}
+ const s=sun(simNow),gm=gmst(simNow);
+ G.sky.rotation.y=-gm*D2R; // 恒星は慣性系に固定：地球固定座標では恒星時の分だけ逆に回る
+ G.sv.copy(ll2v(s.dec/D2R,s.lon,1));G.mat.uniforms.uSun.value.copy(G.sv);
+ G.sunSpr.position.copy(G.sv).multiplyScalar(300);G.sunLight.position.copy(G.sv).multiplyScalar(100);
+ const mv=moonVec(simNow),mp=ll2v(mv.dec,mv.ra-gm,mv.r);G.moon.position.copy(mp);
+ G.moon.scale.setScalar(Math.max(1,.004*cam.position.distanceTo(mp)/.2725)); // 遠くからでも見える最小サイズ
+ {const x=mp.clone().normalize().negate(),n=ll2v(66.56,270-gm,1); // 月の表側を地球に向け、黄道の北を上にする
+  n.addScaledVector(x,-n.dot(x)).normalize();G.mm.makeBasis(x,n,new THREE.Vector3().crossVectors(x,n));G.moon.quaternion.setFromRotationMatrix(G.mm);}
+ const k=Math.max(.7,Math.min(2.2,d/3));
+ for(const o of G.sats){const v=o.v;v.g=geo(v.rec,simNow);if(!v.g){o.lbl.style.display='none';continue;}
+  const a=pts(v),past=a.filter(p=>p.t<=simNow).concat(v.g),fut=[v.g].concat(a.filter(p=>p.t>simNow));
+  setLine(o.past,past);setLine(o.fut,fut);
+  const p=ll2v(v.g.lat,v.g.lon,1+v.g.h/RE);o.dot.position.copy(p);o.halo.position.copy(p);o.dot.scale.setScalar(k);o.halo.scale.setScalar(.12*k);
+  place(o.lbl,p,w,h,d<15);}
+ for(const e of G.extra)place(e.lbl,e.pos,w,h,true);
+ G.renderer.render(G.scene,cam);
+}
+function setMode(m){
+ if(m==='3d'&&!G)return;mode=m;
+ cv.style.display=m==='2d'?'block':'none';$('#gl').style.display=m==='3d'?'block':'none';$('#jump').style.display=m==='3d'?'':'none';$('#cst').style.display=(m==='3d'&&G&&G.cst)?'':'none';
+ $('#v3').setAttribute('aria-pressed',m==='3d');$('#v2').setAttribute('aria-pressed',m==='2d');
+ if(m==='2d')size();}
+
+const ll=(v,a,b)=>Math.abs(v).toFixed(1)+'°'+(v>=0?a:b);
+function findPasses(rec,t0){const out=[],end=t0+72*36e5;let t=t0,inside=false,best=null;
+ while(t<=end){const g=geo(rec,t);if(!g){t+=6e4;continue;}const d=dist(g);
+  if(d<R){inside=true;if(!best||d<best.d)best={t,d,g};}
+  else if(inside){out.push(best);inside=false;best=null;if(out.length>=2)return out;}
+  t+=d>R+500?6e4:5e3;}
+ if(inside&&best)out.push(best);return out;}
+const fmtT=t=>new Date(t).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
+function rel(t){const m=t-simNow;if(m<-12e4)return'通過済み';if(m<6e4)return'まもなく／通過中';const h=Math.floor(m/36e5),mi=String(Math.floor(m%36e5/6e4)).padStart(2,'0');return'あと'+(h>=24?Math.floor(h/24)+'日'+h%24+'時間':h+'時間'+mi+'分');}
+function setObs(lat,lon){obs={lat:Math.max(-90,Math.min(90,lat)),lon};passT=null;if(G)G.dirty=true;$('#obs').textContent='地点：'+ll(obs.lat,'N','S')+' '+ll(obs.lon,'E','W');}
+function ui(){
+ $('#clk').textContent=new Date(simNow).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'});
+ $('#mode').textContent=speed===1&&Math.abs(simNow-Date.now())<3000?'リアルタイム':'シミュレーション中';
+ const sn=sun(simNow);
+ for(const v of live){const e=$('#s'+v.id);if(!e||!v.g)continue;const set=(k,x,cls)=>{const d=e.querySelector('[data-k='+k+']');d.textContent=x;d.className=cls||'';};
+  set('pos',ll(v.g.lat,'N','S')+' '+ll(v.g.lon,'E','W'));set('h',Math.round(v.g.h)+' km');
+  const dy=elev(v.g.lat,v.g.lon,sn)>0;set('sun',dy?'昼側（SWIR観測可）':'夜側（SWIR観測不可）',dy?'day':'night');}
+ if(!passT||Math.abs(simNow-passT)>6*36e5||live.some(v=>passes[v.id]&&passes[v.id][0]&&passes[v.id][0].t<simNow-12e4)){
+  passT=simNow;for(const v of live){passes[v.id]=findPasses(v.rec,simNow).map(p=>({...p,day:elev(p.g.lat,p.g.lon,sun(p.t))>0}));}}
+ $('#passes').innerHTML=live.map(v=>'<div class="sat" style="--c:'+v.c+'"><h3>'+v.name+'</h3><ul>'+
+  ((passes[v.id]||[]).map(p=>'<li><b>'+fmtT(p.t)+'</b><span>'+rel(p.t)+'</span><span>最接近 約'+Math.round(p.d)+' km</span><span class="'+(p.day?'day':'night')+'">'+(p.day?'昼側':'夜側')+'</span></li>').join('')||'<li class="night">72時間以内に通過しません</li>')+'</ul></div>').join('');
+}
+function frame(ts){simNow+=(ts-last)*speed;last=ts;
+ if(mode==='3d'&&G)draw3D();else draw(ts);
+ if(ts-lastUI>250){ui();lastUI=ts;}
+ (reduce&&mode==='2d')?setTimeout(()=>requestAnimationFrame(frame),1000):requestAnimationFrame(frame);}
+(async()=>{
+ if(typeof satellite==='undefined'){warn('軌道計算ライブラリ(satellite.js)を読み込めませんでした。ネットワーク接続を確認してください。');return;}
+ size();addEventListener('resize',size);
+ let tle=null;try{const r=await fetch('data/tle.json',{cache:'no-store'});if(r.ok)tle=(await r.json()).sats;}catch(e){}
+ const src=tle||Object.fromEntries(Object.entries(FALLBACK).map(([k,v])=>[k,{l1:v[0],l2:v[1]}]));
+ live=SATS.filter(s=>src[s.id]).map(s=>({...s,rec:satellite.twoline2satrec(src[s.id].l1,src[s.id].l2)}));
+ const age=v=>(Date.now()-(v.rec.jdsatepoch+(v.rec.jdsatepochF||0)-2440587.5)*864e5)/864e5;
+ if(!tle)warn('data/tle.json を読み込めないため、埋め込みの古いTLEで表示しています（位置は大きくずれます）。fetch_tle.py を実行し、python3 -m http.server で開いてください。');
+ else if(live.some(v=>age(v)>14))warn('一部のTLEが14日以上前のものです。fetch_tle.py を再実行すると位置が正確になります。');
+ $('#sats').innerHTML=live.map(v=>'<section class="sat" style="--c:'+v.c+'" id="s'+v.id+'"><h3>'+v.name+'<small>'+v.sub+'</small></h3><dl>'+
+  '<div><dt>位置</dt><dd data-k="pos"></dd></div><div><dt>高度</dt><dd data-k="h"></dd></div><div><dt>太陽光</dt><dd data-k="sun"></dd></div>'+
+  '<div><dt>周期</dt><dd>'+(2*Math.PI/v.rec.no).toFixed(1)+' 分</dd></div><div><dt>軌道データの経過</dt><dd class="'+(age(v)>14?'warnv':'')+'">'+Math.round(age(v))+' 日</dd></div></dl></section>').join('');
+ setObs(obs.lat,obs.lon);
+ $('#spd').onchange=e=>{speed=+e.target.value;};
+ $('#now').onclick=()=>{simNow=Date.now();speed=1;$('#spd').value='1';passT=null;};
+ $('#rad').onchange=e=>{R=+e.target.value;passT=null;if(G)G.dirty=true;};
+ $('#v3').onclick=()=>setMode('3d');$('#v2').onclick=()=>setMode('2d');
+ $('#geo').onclick=()=>navigator.geolocation?navigator.geolocation.getCurrentPosition(p=>{setObs(p.coords.latitude,p.coords.longitude);if(mode==='3d')jumpTo(obs.lat,obs.lon);},()=>{$('#obs').textContent='現在地を取得できませんでした。地図をクリックして地点を選んでください。';}):0;
+ cv.onclick=e=>{const r=cv.getBoundingClientRect();setObs(90-(e.clientY-r.top)/r.height*180,(e.clientX-r.left)/r.width*360-180);};
+ last=performance.now();requestAnimationFrame(frame);
+ // 画像と簡易地図の読み込みが済んでから3Dを開始する（それまでは2D地図を表示）
+ const landP=fetch('https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/land-110m.json').then(r=>r.json()).then(t=>{const o=[];rings(topojson.feature(t,t.objects.land),o);land=o;}).catch(()=>{});
+ Promise.all([loadImg(IMG_DAY),loadImg(IMG_NIGHT),landP]).then(([a,b])=>{
+  if(a&&b){dayImg=a;nightImg=b;ec=null;}
+  try{init3D();}catch(e){warn('3D表示を開始できませんでした（'+e.message+'）。2D地図で表示します。');}
+ });
+})();
+</script>
+</body>
+</html>

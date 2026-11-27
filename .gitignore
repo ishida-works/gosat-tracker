@@ -1,0 +1,9 @@
+# Generated orbital elements; fetch_tle.py recreates this file.
+data/tle.json
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Local duplicate kept outside the published repository.
+gosat-tracker/
