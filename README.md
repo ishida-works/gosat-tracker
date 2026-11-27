@@ -28,7 +28,7 @@ $$
 
 $$
 \left(\boldsymbol{r}_{\mathrm{TEME}}(t),\ \boldsymbol{v}_{\mathrm{TEME}}(t)\right)
-= \operatorname{SGP4}(\mathrm{TLE},\Delta t)
+= \mathrm{SGP4}(\mathrm{TLE},\Delta t)
 $$
 
 $t$ に現在時刻を入れれば現在位置、未来の時刻を入れれば予測位置になります。過去の軌跡も同じ方法で計算します。SGP4 は地球の形状による摂動や大気抵抗などを考慮するモデルで、上式はその**計算処理全体を表す記法**です。単純なケプラー運動の式だけで TLE を伝播しているわけではありません。詳細なモデルと実装は [Revisiting Spacetrack Report #3](https://celestrak.org/publications/AIAA/2006-6753/) を参照してください。
@@ -48,15 +48,15 @@ $$
 東経を正とする経度 $\lambda$ は、次のように求められます。`atan2` は象限を考慮した逆正接です。
 
 $$
-\lambda = \operatorname{atan2}(y_f,x_f)
+\lambda = \mathrm{atan2}(y_f,x_f)
 $$
 
-地球を球ではなく楕円体として扱い、測地緯度 $\phi$ と楕円体からの高度 $h$ を求めます。赤道半径を $a$、楕円体の離心率を $e$ とし、$p=\sqrt{x_f^2+y_f^2}$ とおくと、次の関係を満たす $\phi$ を反復計算します。
+地球を球ではなく楕円体として扱い、測地緯度 $\phi$ と楕円体からの高度 $h$ を求めます。赤道半径を $a$、楕円体の離心率を $e$ とし、 $p=\sqrt{x_f^2+y_f^2}$ とおくと、次の関係を満たす $\phi$ を反復計算します。
 
 $$
 \begin{aligned}
 N(\phi) &= \frac{a}{\sqrt{1-e^2\sin^2\phi}},\\
-\phi &= \operatorname{atan2}\!\left(z_f+e^2N(\phi)\sin\phi,\ p\right),\\
+\phi &= \mathrm{atan2}\left(z_f+e^2N(\phi)\sin\phi,\ p\right),\\
 h &= \frac{p}{\cos\phi}-N(\phi).
 \end{aligned}
 $$
@@ -68,7 +68,7 @@ $$
 観測地点の緯度・経度を $(\phi_o,\lambda_o)$、衛星の直下点を $(\phi_s,\lambda_s)$ とし、地球を半径 $R=6371\ \mathrm{km}$ の球として、両地点の地表距離 $d$ を求めます。
 
 $$
-d=R\arccos\!\left(\sin\phi_o\sin\phi_s+\cos\phi_o\cos\phi_s\cos(\lambda_s-\lambda_o)\right)
+d=R\arccos\left(\sin\phi_o\sin\phi_s+\cos\phi_o\cos\phi_s\cos(\lambda_s-\lambda_o)\right)
 $$
 
 現在から72時間先まで時刻を進めて距離を調べ、指定半径内に入る区間ごとに、最も距離が小さい時刻を最大2件表示します。遠いときは1分刻み、近くでは5秒刻みの探索です。これは**衛星の直下点と指定地点の地表距離**であり、衛星を地上から目視できることや、実際に観測が行われることを保証するものではありません。
