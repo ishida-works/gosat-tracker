@@ -18,7 +18,25 @@ import re
 import time
 import urllib.request
 
-IDS = {"33492": "GOSAT (IBUKI)", "43672": "GOSAT-2 (IBUKI-2)", "64694": "GOSAT-GW"}
+# 対象衛星は satellites.json を編集してください（表示側と共通）。
+CONFIG = pathlib.Path(__file__).parent / "satellites.json"
+satellites = json.loads(CONFIG.read_text(encoding="utf-8"))
+if not isinstance(satellites, list) or not satellites:
+    raise SystemExit("satellites.json に衛星を1件以上設定してください。")
+IDS = {}
+for sat in satellites:
+    if not isinstance(sat, dict):
+        raise SystemExit("satellites.json の各衛星はオブジェクトで指定してください。")
+    cat = sat.get("id", "")
+    if not isinstance(cat, str) or not re.fullmatch(r"[0-9]{1,5}", cat) or cat in IDS:
+        raise SystemExit(f"satellites.json の衛星番号が不正または重複しています: {cat!r}")
+    if not isinstance(sat.get("name"), str) or not sat["name"].strip():
+        raise SystemExit(f"衛星 {cat} の name を設定してください。")
+    if not isinstance(sat.get("sub"), str) or not isinstance(sat.get("color"), str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", sat["color"]):
+        raise SystemExit(f"衛星 {cat} の sub または color が不正です。")
+    if not isinstance(sat.get("swir"), bool):
+        raise SystemExit(f"衛星 {cat} の swir は true または false にしてください。")
+    IDS[cat] = sat["name"]
 URLS = {
     "n2yo": "https://www.n2yo.com/satellite/?s={}",
     "celestrak": "https://celestrak.org/NORAD/elements/gp.php?CATNR={}&FORMAT=tle",
@@ -81,6 +99,7 @@ def get(url):
 ap = argparse.ArgumentParser()
 ap.add_argument("--source", choices=["n2yo", "celestrak"], default="n2yo")
 ap.add_argument("--manual", metavar="FILE", help="TLEを貼り付けたテキストファイル")
+ap.add_argument("--require-all", action="store_true", help="全衛星の取得に成功したときだけ保存")
 args = ap.parse_args()
 
 sats = {}
@@ -106,9 +125,9 @@ for cat, name in IDS.items():
     else:
         print("なし", cat, name)
 
-if not sats:
-    print("\nTLEを1件も取得できませんでした。既存の data/tle.json は変更していません。")
-    print("・WSL側のpython3で実行しているか、プロキシ設定が必要かを確認")
+if not sats or (args.require_all and len(sats) != len(IDS)):
+    print("\n必要なTLEを取得できませんでした。既存の data/tle.json は変更していません。")
+    print("・ネットワーク接続やプロキシ設定を確認")
     print("・--source を切り替えるか、--manual でコピーしたTLEを渡すこともできます")
     raise SystemExit(1)
 

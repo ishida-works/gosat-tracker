@@ -1,0 +1,5 @@
+[
+  {"id": "33492", "name": "GOSAT", "sub": "いぶき", "color": "#E69F00", "swir": true},
+  {"id": "43672", "name": "GOSAT-2", "sub": "いぶき2号", "color": "#56B4E9", "swir": true},
+  {"id": "64694", "name": "GOSAT-GW", "sub": "後継機", "color": "#009E73", "swir": true}
+]

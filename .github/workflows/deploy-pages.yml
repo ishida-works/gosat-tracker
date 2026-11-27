@@ -27,8 +27,7 @@ jobs:
         uses: actions/checkout@v4
       - name: Fetch current orbital elements
         run: |
-          python3 fetch_tle.py --source celestrak
-          python3 -c "import json; d=json.load(open('data/tle.json')); assert {'33492','43672','64694'} <= d['sats'].keys(), 'Missing orbital elements'"
+          python3 fetch_tle.py --source celestrak --require-all
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload site artifact

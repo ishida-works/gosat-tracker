@@ -89,10 +89,8 @@ h2{font-size:17px;margin:0 0 12px}
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
 <script>
-const SATS=[
- {id:'33492',name:'GOSAT',sub:'いぶき',c:'#E69F00'},
- {id:'43672',name:'GOSAT-2',sub:'いぶき2号',c:'#56B4E9'},
- {id:'64694',name:'GOSAT-GW',sub:'後継機',c:'#009E73'}];
+// 対象衛星の変更は satellites.json を編集してください（取得・表示・公開で共通）。
+// 書き方と注意点は README の「対象衛星を変更する」を参照。
 // data/tle.json が無いときのデモ用（古いTLE。位置はずれます）
 const FALLBACK={
  '33492':['1 33492U 09002A   26215.86589030  .00000521  00000+0  10043-3 0  9995','2 33492  98.0924 326.3581 0001112 101.3560 258.7770 14.67537881938459'],
@@ -375,7 +373,7 @@ function ui(){
  const sn=sun(simNow);
  for(const v of live){const e=$('#s'+v.id);if(!e||!v.g)continue;const set=(k,x,cls)=>{const d=e.querySelector('[data-k='+k+']');d.textContent=x;d.className=cls||'';};
   set('pos',ll(v.g.lat,'N','S')+' '+ll(v.g.lon,'E','W'));set('h',Math.round(v.g.h)+' km');
-  const dy=elev(v.g.lat,v.g.lon,sn)>0;set('sun',dy?'昼側（SWIR観測可）':'夜側（SWIR観測不可）',dy?'day':'night');}
+  const dy=elev(v.g.lat,v.g.lon,sn)>0;set('sun',v.swir?(dy?'昼側（SWIR観測可）':'夜側（SWIR観測不可）'):(dy?'昼側':'夜側'),dy?'day':'night');}
  if(!passT||Math.abs(simNow-passT)>6*36e5||live.some(v=>passes[v.id]&&passes[v.id][0]&&passes[v.id][0].t<simNow-12e4)){
   passT=simNow;for(const v of live){passes[v.id]=findPasses(v.rec,simNow).map(p=>({...p,day:elev(p.g.lat,p.g.lon,sun(p.t))>0}));}}
  $('#passes').innerHTML=live.map(v=>'<div class="sat" style="--c:'+v.c+'"><h3>'+v.name+'</h3><ul>'+
@@ -388,9 +386,13 @@ function frame(ts){simNow+=(ts-last)*speed;last=ts;
 (async()=>{
  if(typeof satellite==='undefined'){warn('軌道計算ライブラリ(satellite.js)を読み込めませんでした。ネットワーク接続を確認してください。');return;}
  size();addEventListener('resize',size);
+ let SATS;try{const r=await fetch('satellites.json',{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);
+  SATS=(await r.json()).map(s=>({...s,c:s.color}));if(!SATS.length)throw new Error('対象衛星がありません');}
+ catch(e){warn('satellites.json を読み込めませんでした。設定と Web サーバーを確認してください。');return;}
  let tle=null;try{const r=await fetch('data/tle.json',{cache:'no-store'});if(r.ok)tle=(await r.json()).sats;}catch(e){}
  const src=tle||Object.fromEntries(Object.entries(FALLBACK).map(([k,v])=>[k,{l1:v[0],l2:v[1]}]));
  live=SATS.filter(s=>src[s.id]).map(s=>({...s,rec:satellite.twoline2satrec(src[s.id].l1,src[s.id].l2)}));
+ const missing=SATS.filter(s=>!src[s.id]);if(missing.length)warn('次の衛星の軌道データがありません：'+missing.map(s=>s.name).join('、')+'。TLE を更新してください。');
  const age=v=>(Date.now()-(v.rec.jdsatepoch+(v.rec.jdsatepochF||0)-2440587.5)*864e5)/864e5;
  if(!tle)warn('data/tle.json を読み込めないため、埋め込みの古いTLEで表示しています（位置は大きくずれます）。fetch_tle.py を実行し、python3 -m http.server で開いてください。');
  else if(live.some(v=>age(v)>14))warn('一部のTLEが14日以上前のものです。fetch_tle.py を再実行すると位置が正確になります。');
