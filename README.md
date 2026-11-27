@@ -2,7 +2,7 @@
 
 温室効果ガス観測技術衛星「いぶき」シリーズ（GOSAT、GOSAT-2、GOSAT-GW）の現在位置、地上軌跡、近傍通過時刻をブラウザで確認できる静的Webアプリです。
 
-アプリは [GitHub Pages](https://ishida-works.github.io/gosat-tracker/) で閲覧できます（Pages の公開設定が完了している場合）。
+公開先（設定完了後）: [いまGOSATはどこ？](https://ishida-works.github.io/gosat-tracker/)
 
 ## できること
 
@@ -12,7 +12,7 @@
 - 地図をクリックして観測地点を変更、またはブラウザの現在地を使用
 - 3D 表示で地球、月、太陽、恒星、星座線を確認
 
-## 使い方
+## 自分のパソコンで動かす場合（開発者向け）
 
 このアプリはビルド不要です。Python 3 で最新の軌道要素（TLE）を取得してから、ローカル Web サーバーで開きます。
 
@@ -23,7 +23,7 @@ python fetch_tle.py --source celestrak
 python -m http.server 8000
 ```
 
-ブラウザで <http://localhost:8000> を開いてください。
+上記のサーバーを起動したパソコンのブラウザで `http://localhost:8000` を開いてください。これはローカル開発用で、他の人に共有できるアドレスではありません。
 
 `data/tle.json` がない場合もデモ用の埋め込み TLE で起動しますが、位置は大きくずれるため、利用前に取得してください。
 
